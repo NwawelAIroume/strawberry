@@ -55,7 +55,7 @@ class ScalarDefinition(StrawberryType):
     _source_line: Optional[int] = None
 
     def copy_with(
-        self, type_var_map: Mapping[TypeVar, Union[StrawberryType, type]]
+        self, type_var_map: Mapping[str, Union[StrawberryType, type]]
     ) -> Union[StrawberryType, type]:
         return super().copy_with(type_var_map)  # type: ignore[safe-super]
 
@@ -153,7 +153,7 @@ def scalar(
     ...
 
 
-# FIXME: We are tricking pyright into thinking that we are returning the given type
+# TODO: We are tricking pyright into thinking that we are returning the given type
 # here or else it won't let us use any custom scalar to annotate attributes in
 # dataclasses/types. This should be properly solved when implementing StrawberryScalar
 def scalar(
