@@ -4,21 +4,31 @@ title: Dealing with errors
 
 # Dealing with errors
 
-There are multiple different types of errors in GraphQL and each can be handled differently.
+There are multiple different types of errors in GraphQL and each can be handled
+differently.
 
-In this guide we will outline the different types of errors that you will encounter when building a GraphQL server.
+In this guide we will outline the different types of errors that you will
+encounter when building a GraphQL server.
 
-**Note**: By default Strawberry will log all execution errors to a `strawberry.execution` logger: [/docs/types/schema#handling-execution-errors](../types/schema#handling-execution-errors).
+**Note**: By default Strawberry will log all execution errors to a
+`strawberry.execution` logger:
+[/docs/types/schema#handling-execution-errors](../types/schema#handling-execution-errors).
 
 ## GraphQL validation errors
 
-GraphQL is strongly typed and so Strawberry validates all queries before executing them. If a query is invalid it isn’t executed and instead the response contains an `errors` list:
+GraphQL is strongly typed and so Strawberry validates all queries before
+executing them. If a query is invalid it isn’t executed and instead the response
+contains an `errors` list:
 
-```graphql+response
+<CodeGrid>
+
+```graphql
 {
   hi
 }
----
+```
+
+```json
 {
   "data": null,
   "errors": [
@@ -36,14 +46,20 @@ GraphQL is strongly typed and so Strawberry validates all queries before executi
 }
 ```
 
-Each error has a message, line, column and path to help you identify what part of the query caused the error.
+</CodeGrid>
 
-The validation rules are part of the GraphQL specification and built into Strawberry, so there’s not really a way to customize this behavior.
-You can disable all validation by using the [DisableValidation](../extensions/disable-validation) extension.
+Each error has a message, line, column and path to help you identify what part
+of the query caused the error.
+
+The validation rules are part of the GraphQL specification and built into
+Strawberry, so there’s not really a way to customize this behavior. You can
+disable all validation by using the
+[DisableValidation](../extensions/disable-validation) extension.
 
 ## GraphQL type errors
 
-When a query is executed each field must resolve to the correct type. For example non-null fields cannot return None.
+When a query is executed each field must resolve to the correct type. For
+example non-null fields cannot return None.
 
 ```python
 import strawberry
@@ -59,11 +75,15 @@ class Query:
 schema = strawberry.Schema(query=Query)
 ```
 
-```graphql+response
+<CodeGrid>
+
+```graphql
 {
   hello
 }
----
+```
+
+```json
 {
   "data": null,
   "errors": [
@@ -75,19 +95,22 @@ schema = strawberry.Schema(query=Query)
           "column": 3
         }
       ],
-      "path": [
-        "hello"
-      ]
+      "path": ["hello"]
     }
   ]
 }
 ```
 
-Each error has a message, line, column and path to help you identify what part of the query caused the error.
+</CodeGrid>
+
+Each error has a message, line, column and path to help you identify what part
+of the query caused the error.
 
 ## Unhandled execution errors
 
-Sometimes a resolver will throw an unexpected error due to a programming error or an invalid assumption. When this happens Strawberry catches the error and exposes it in the top level `errors` field in the response.
+Sometimes a resolver will throw an unexpected error due to a programming error
+or an invalid assumption. When this happens Strawberry catches the error and
+exposes it in the top level `errors` field in the response.
 
 ```python
 import strawberry
@@ -108,13 +131,17 @@ class Query:
 schema = strawberry.Schema(query=Query)
 ```
 
-```graphql+response
+<CodeGrid>
+
+```graphql
 {
   user {
     name
   }
 }
----
+```
+
+```json
 {
   "data": null,
   "errors": [
@@ -126,19 +153,21 @@ schema = strawberry.Schema(query=Query)
           "column": 2
         }
       ],
-      "path": [
-        "user"
-      ]
+      "path": ["user"]
     }
   ]
 }
 ```
 
+</CodeGrid>
+
 ## Expected errors
 
-If an error is expected then it is often best to express it in the schema. This allows the client to deal with the error in a robust way.
+If an error is expected then it is often best to express it in the schema. This
+allows the client to deal with the error in a robust way.
 
-This could be achieved by making the field optional when there is a possibility that the data won’t exist:
+This could be achieved by making the field optional when there is a possibility
+that the data won’t exist:
 
 ```python
 from typing import Optional
@@ -156,9 +185,14 @@ class Query:
             return None
 ```
 
-When the expected error is more complicated it’s a good pattern to instead return a union of types that either represent an error or a success response. This pattern is often adopted with mutations where it’s important to be able to return more complicated error details to the client.
+When the expected error is more complicated it’s a good pattern to instead
+return a union of types that either represent an error or a success response.
+This pattern is often adopted with mutations where it’s important to be able to
+return more complicated error details to the client.
 
-For example, say you have a `registerUser` mutation where you need to deal with the possibility that a user tries to register with a username that already exists. You might structure your mutation type like this:
+For example, say you have a `registerUser` mutation where you need to deal with
+the possibility that a user tries to register with a username that already
+exists. You might structure your mutation type like this:
 
 ```python
 import strawberry
@@ -196,7 +230,8 @@ def register_user(username: str, password: str) -> Response:
     return RegisterUserSuccess(user=user)
 ```
 
-Then your client can look at the `__typename` of the result to determine what to do next:
+Then your client can look at the `__typename` of the result to determine what to
+do next:
 
 ```graphql
 mutation RegisterUser($username: String!, $password: String!) {
@@ -213,7 +248,9 @@ mutation RegisterUser($username: String!, $password: String!) {
 }
 ```
 
-This approach allows you to express the possible error states in the schema and so provide a robust interface for your client to account for all the potential outcomes from a mutation.
+This approach allows you to express the possible error states in the schema and
+so provide a robust interface for your client to account for all the potential
+outcomes from a mutation.
 
 ---
 

@@ -5,11 +5,11 @@ from typing import Any, Dict, List, NoReturn, Optional
 import pytest
 
 import strawberry
+from strawberry import Info
 from strawberry.directive import DirectiveLocation, DirectiveValue
 from strawberry.extensions import SchemaExtension
 from strawberry.schema.config import StrawberryConfig
-from strawberry.type import get_object_definition
-from strawberry.types.info import Info
+from strawberry.types.base import get_object_definition
 from strawberry.utils.await_maybe import await_maybe
 
 
@@ -416,9 +416,9 @@ def info_directive_schema() -> strawberry.Schema:
         locations=[DirectiveLocation.FIELD],
         description="Interpolate string on the server from context data",
     )
-    def interpolate(value: str, info: Info):
+    def interpolate(value: str, info: strawberry.Info):
         try:
-            assert isinstance(info, Info)
+            assert isinstance(info, strawberry.Info)
             assert info._field is field
             return value.format(**info.context["userdata"])
         except KeyError:
@@ -567,8 +567,7 @@ def test_named_based_directive_value_is_deprecated():
             hello: str = "hello"
 
         @strawberry.directive(locations=[DirectiveLocation.FIELD])
-        def deprecated_value(value):
-            ...
+        def deprecated_value(value): ...
 
         strawberry.Schema(query=Query, directives=[deprecated_value])
 
@@ -656,3 +655,36 @@ def test_directives_with_scalar():
     '''
 
     assert schema.as_str() == textwrap.dedent(expected_schema).strip()
+
+
+@pytest.mark.asyncio
+async def test_directive_with_custom_info_class() -> NoReturn:
+    @strawberry.type
+    class Query:
+        @strawberry.field
+        def greeting(self) -> str:
+            return "Hi"
+
+    class CustomInfo(Info):
+        test: str = "foo"
+
+    @strawberry.directive(locations=[DirectiveLocation.FIELD])
+    def append_names(value: DirectiveValue[str], names: List[str], info: CustomInfo):
+        assert isinstance(names, list)
+        assert isinstance(info, CustomInfo)
+        assert Info in type(info).__bases__  # Explicitly check it's not Info.
+        assert info.test == "foo"
+        return f"{value} {', '.join(names)}"
+
+    schema = strawberry.Schema(
+        query=Query,
+        directives=[append_names],
+        config=StrawberryConfig(info_class=CustomInfo),
+    )
+
+    result = await schema.execute(
+        'query { greeting @appendNames(names: ["foo", "bar"])}'
+    )
+
+    assert result.errors is None
+    assert result.data["greeting"] == "Hi foo, bar"

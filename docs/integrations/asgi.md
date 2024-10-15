@@ -29,13 +29,18 @@ app with `uvicorn server:app`
 
 ## Options
 
-The `GraphQL` app accepts two options at the moment:
+The `GraphQL` app accepts the following options at the moment:
 
 - `schema`: mandatory, the schema created by `strawberry.Schema`.
-- `graphiql`: optional, defaults to `True`, whether to enable the GraphiQL
-  interface.
+- `graphql_ide`: optional, defaults to `"graphiql"`, allows to choose the
+  GraphQL IDE interface (one of `graphiql`, `apollo-sandbox` or `pathfinder`) or
+  to disable it by passing `None`.
 - `allow_queries_via_get`: optional, defaults to `True`, whether to enable
   queries via `GET` requests
+- `multipart_uploads_enabled`: optional, defaults to `False`, controls whether
+  to enable multipart uploads. Please make sure to consider the
+  [security implications mentioned in the GraphQL Multipart Request Specification](https://github.com/jaydenseric/graphql-multipart-request-spec/blob/master/readme.md#security)
+  when enabling this feature.
 
 ## Extending the view
 
@@ -45,8 +50,9 @@ We allow to extend the base `GraphQL` app, by overriding the following methods:
 - `async get_root_value(self, request: Request) -> Any`
 - `async process_result(self, request: Request, result: ExecutionResult) -> GraphQLHTTPResponse`
 - `def encode_json(self, response_data: GraphQLHTTPResponse) -> str`
+- `async def render_graphql_ide(self, request: Request) -> Response`
 
-## get_context
+### get_context
 
 `get_context` allows to provide a custom context object that can be used in your
 resolver. You can return anything here, by default we return a dictionary with
@@ -63,7 +69,7 @@ class MyGraphQL(GraphQL):
 @strawberry.type
 class Query:
     @strawberry.field
-    def example(self, info: Info) -> str:
+    def example(self, info: strawberry.Info) -> str:
         return str(info.context["example"])
 ```
 
@@ -73,7 +79,7 @@ called "example".
 Then we use the context in a resolver, the resolver will return "1" in this
 case.
 
-### Setting response headers
+#### Setting response headers
 
 It is possible to use `get_context` to set response headers. A common use case
 might be cookie-based user authentication, where your login mutation resolver
@@ -86,13 +92,13 @@ the `Info` object.
 @strawberry.type
 class Mutation:
     @strawberry.mutation
-    def login(self, info: Info) -> bool:
+    def login(self, info: strawberry.Info) -> bool:
         token = do_login()
         info.context["response"].set_cookie(key="token", value=token)
         return True
 ```
 
-### Setting background tasks
+#### Setting background tasks
 
 Similarly, [background tasks](https://www.starlette.io/background/) can be set
 on the response via the context:
@@ -101,18 +107,17 @@ on the response via the context:
 from starlette.background import BackgroundTask
 
 
-async def notify_new_flavour(name: str):
-    ...
+async def notify_new_flavour(name: str): ...
 
 
 @strawberry.type
 class Mutation:
     @strawberry.mutation
-    def create_flavour(self, name: str, info: Info) -> bool:
+    def create_flavour(self, name: str, info: strawberry.Info) -> bool:
         info.context["response"].background = BackgroundTask(notify_new_flavour, name)
 ```
 
-## get_root_value
+### get_root_value
 
 `get_root_value` allows to provide a custom root value for your schema, this is
 probably not used a lot but it might be useful in certain situations.
@@ -133,7 +138,7 @@ class Query:
 Here we are returning a Query where the name is "Patrick", so we when requesting
 the field name we'll return "Patrick" in this case.
 
-## process_result
+### process_result
 
 `process_result` allows to customize and/or process results before they are sent
 to the clients. This can be useful logging errors or hiding them (for example to
@@ -162,7 +167,7 @@ class MyGraphQL(GraphQL):
 In this case we are doing the default processing of the result, but it can be
 tweaked based on your needs.
 
-## encode_json
+### encode_json
 
 `encode_json` allows to customize the encoding of the JSON response. By default
 we use `json.dumps` but you can override this method to use a different encoder.
@@ -171,4 +176,21 @@ we use `json.dumps` but you can override this method to use a different encoder.
 class MyGraphQLView(GraphQL):
     def encode_json(self, data: GraphQLHTTPResponse) -> str:
         return json.dumps(data, indent=2)
+```
+
+### render_graphql_ide
+
+In case you need more control over the rendering of the GraphQL IDE than the
+`graphql_ide` option provides, you can override the `render_graphql_ide` method.
+
+```python
+from strawberry.asgi import GraphQL
+from starlette.responses import HTMLResponse, Response
+
+
+class MyGraphQL(GraphQL):
+    async def render_graphql_ide(self, request: Request) -> Response:
+        custom_html = """<html><body><h1>Custom GraphQL IDE</h1></body></html>"""
+
+        return HTMLResponse(custom_html)
 ```

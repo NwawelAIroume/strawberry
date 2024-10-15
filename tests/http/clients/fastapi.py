@@ -11,8 +11,8 @@ from starlette.websockets import WebSocketDisconnect
 from fastapi import BackgroundTasks, Depends, FastAPI, Request, WebSocket
 from fastapi.testclient import TestClient
 from strawberry.fastapi import GraphQLRouter as BaseGraphQLRouter
-from strawberry.fastapi.handlers import GraphQLTransportWSHandler, GraphQLWSHandler
 from strawberry.http import GraphQLHTTPResponse
+from strawberry.http.ides import GraphQL_IDE
 from strawberry.types import ExecutionResult
 from tests.views.schema import Query, schema
 
@@ -20,23 +20,13 @@ from ..context import get_context
 from .asgi import AsgiWebSocketClient
 from .base import (
     JSON,
-    DebuggableGraphQLTransportWSMixin,
-    DebuggableGraphQLWSMixin,
+    DebuggableGraphQLTransportWSHandler,
+    DebuggableGraphQLWSHandler,
     HttpClient,
     Response,
     ResultOverrideFunction,
     WebSocketClient,
 )
-
-
-class DebuggableGraphQLTransportWSHandler(
-    DebuggableGraphQLTransportWSMixin, GraphQLTransportWSHandler
-):
-    pass
-
-
-class DebuggableGraphQLWSHandler(DebuggableGraphQLWSMixin, GraphQLWSHandler):
-    pass
 
 
 def custom_context_dependency() -> str:
@@ -81,19 +71,23 @@ class GraphQLRouter(BaseGraphQLRouter[Any, Any]):
 class FastAPIHttpClient(HttpClient):
     def __init__(
         self,
-        graphiql: bool = True,
+        graphiql: Optional[bool] = None,
+        graphql_ide: Optional[GraphQL_IDE] = "graphiql",
         allow_queries_via_get: bool = True,
         result_override: ResultOverrideFunction = None,
+        multipart_uploads_enabled: bool = False,
     ):
         self.app = FastAPI()
 
         graphql_app = GraphQLRouter(
             schema,
             graphiql=graphiql,
+            graphql_ide=graphql_ide,
             context_getter=fastapi_get_context,
             root_value_getter=get_root_value,
             allow_queries_via_get=allow_queries_via_get,
             keep_alive=False,
+            multipart_uploads_enabled=multipart_uploads_enabled,
         )
         graphql_app.result_override = result_override
         self.app.include_router(graphql_app, prefix="/graphql")
@@ -106,6 +100,14 @@ class FastAPIHttpClient(HttpClient):
         self.app.include_router(graphql_app, prefix="/graphql")
 
         self.client = TestClient(self.app)
+
+    async def _handle_response(self, response: Any) -> Response:
+        # TODO: here we should handle the stream
+        return Response(
+            status_code=response.status_code,
+            data=response.content,
+            headers=response.headers,
+        )
 
     async def _graphql_request(
         self,
@@ -138,11 +140,7 @@ class FastAPIHttpClient(HttpClient):
             **kwargs,
         )
 
-        return Response(
-            status_code=response.status_code,
-            data=response.content,
-            headers=response.headers,
-        )
+        return await self._handle_response(response)
 
     async def request(
         self,
@@ -152,11 +150,7 @@ class FastAPIHttpClient(HttpClient):
     ) -> Response:
         response = getattr(self.client, method)(url, headers=headers)
 
-        return Response(
-            status_code=response.status_code,
-            data=response.content,
-            headers=response.headers,
-        )
+        return await self._handle_response(response)
 
     async def get(
         self,
@@ -174,11 +168,7 @@ class FastAPIHttpClient(HttpClient):
     ) -> Response:
         response = self.client.post(url, headers=headers, content=data, json=json)
 
-        return Response(
-            status_code=response.status_code,
-            data=response.content,
-            headers=response.headers,
-        )
+        return await self._handle_response(response)
 
     @contextlib.asynccontextmanager
     async def ws_connect(

@@ -7,8 +7,8 @@ import pytest
 import strawberry
 from strawberry.annotation import StrawberryAnnotation
 from strawberry.exceptions import InvalidUnionTypeError
-from strawberry.type import get_object_definition
-from strawberry.union import StrawberryUnion, union
+from strawberry.types.base import get_object_definition
+from strawberry.types.union import StrawberryUnion, union
 
 
 def test_python_union():
@@ -101,7 +101,7 @@ def test_union_with_generic():
     assert strawberry_union.types[0] == Error
 
     assert (
-        get_object_definition(strawberry_union.types[1], strict=True).is_generic
+        get_object_definition(strawberry_union.types[1], strict=True).is_graphql_generic
         is False
     )
 

@@ -105,8 +105,7 @@ class DataLoader(Generic[K, T]):
         loop: Optional[AbstractEventLoop] = None,
         cache_map: Optional[AbstractCache[K, T]] = None,
         cache_key_fn: Optional[Callable[[K], Hashable]] = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     # fallback if load_fn is untyped and there's no other info for inference
     @overload
@@ -118,8 +117,7 @@ class DataLoader(Generic[K, T]):
         loop: Optional[AbstractEventLoop] = None,
         cache_map: Optional[AbstractCache[K, T]] = None,
         cache_key_fn: Optional[Callable[[K], Hashable]] = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def __init__(
         self,
@@ -210,14 +208,11 @@ class DataLoader(Generic[K, T]):
 
 
 def should_create_new_batch(loader: DataLoader, batch: Batch) -> bool:
-    if (
+    return bool(
         batch.dispatched
         or loader.max_batch_size
         and len(batch) >= loader.max_batch_size
-    ):
-        return True
-
-    return False
+    )
 
 
 def get_current_batch(loader: DataLoader) -> Batch:
@@ -269,3 +264,16 @@ async def dispatch_batch(loader: DataLoader, batch: Batch) -> None:
     except Exception as e:
         for task in batch.tasks:
             task.future.set_exception(e)
+
+
+__all__ = [
+    "DataLoader",
+    "Batch",
+    "LoaderTask",
+    "AbstractCache",
+    "DefaultCache",
+    "should_create_new_batch",
+    "get_current_batch",
+    "dispatch",
+    "dispatch_batch",
+]

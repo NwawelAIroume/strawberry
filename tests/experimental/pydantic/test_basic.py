@@ -1,17 +1,21 @@
 import dataclasses
 from enum import Enum
 from typing import Any, List, Optional, Union
+from typing_extensions import Annotated
 
 import pydantic
 import pytest
 
 import strawberry
-from strawberry.enum import EnumDefinition
 from strawberry.experimental.pydantic.exceptions import MissingFieldsListError
 from strawberry.schema_directive import Location
-from strawberry.type import StrawberryList, StrawberryOptional
-from strawberry.types.types import StrawberryObjectDefinition
-from strawberry.union import StrawberryUnion
+from strawberry.types.base import (
+    StrawberryList,
+    StrawberryObjectDefinition,
+    StrawberryOptional,
+)
+from strawberry.types.enum import EnumDefinition
+from strawberry.types.union import StrawberryUnion
 
 
 def test_basic_type_field_list():
@@ -625,7 +629,8 @@ def test_both_output_and_input_type():
 
     class User(pydantic.BaseModel):
         name: str
-        work: Optional[Work]
+        # Note that pydantic v2 requires an explicit default of None for Optionals
+        work: Optional[Work] = None
 
     class Group(pydantic.BaseModel):
         users: List[User]
@@ -913,3 +918,42 @@ def test_field_metadata():
 
     assert field2.python_name == "public"
     assert not field2.metadata
+
+
+def test_annotated():
+    class User(pydantic.BaseModel):
+        a: Annotated[int, "metadata"]
+
+    @strawberry.experimental.pydantic.input(User, all_fields=True)
+    class UserType:
+        pass
+
+    definition: StrawberryObjectDefinition = UserType.__strawberry_definition__
+    assert definition.name == "UserType"
+
+    [field] = definition.fields
+    assert field.python_name == "a"
+    assert field.type is int
+
+
+def test_nested_annotated():
+    class User(pydantic.BaseModel):
+        a: Optional[Annotated[int, "metadata"]]
+        b: Optional[List[Annotated[int, "metadata"]]]
+
+    @strawberry.experimental.pydantic.input(User, all_fields=True)
+    class UserType:
+        pass
+
+    definition: StrawberryObjectDefinition = UserType.__strawberry_definition__
+    assert definition.name == "UserType"
+
+    [field_a, field_b] = definition.fields
+    assert field_a.python_name == "a"
+    assert isinstance(field_a.type, StrawberryOptional)
+    assert field_a.type.of_type is int
+
+    assert field_b.python_name == "b"
+    assert isinstance(field_b.type, StrawberryOptional)
+    assert isinstance(field_b.type.of_type, StrawberryList)
+    assert field_b.type.of_type.of_type is int

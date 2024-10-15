@@ -10,18 +10,21 @@ It provides a view that you can use to serve your GraphQL schema:
 
 ```python
 from django.urls import path
+from django.views.decorators.csrf import csrf_exempt
 
 from strawberry.django.views import GraphQLView
 
 from api.schema import schema
 
 urlpatterns = [
-    path("graphql/", GraphQLView.as_view(schema=schema)),
+    path("graphql/", csrf_exempt(GraphQLView.as_view(schema=schema))),
 ]
 ```
 
-Strawberry only provides a GraphQL view for Django, [Strawberry GraphQL Django](https://github.com/strawberry-graphql/strawberry-graphql-django) provides integration with the models.
-`import strawberry_django` should do the same as `import strawberry.django` if both libraries are installed.
+Strawberry only provides a GraphQL view for Django,
+[Strawberry GraphQL Django](https://github.com/strawberry-graphql/strawberry-graphql-django)
+provides integration with the models. `import strawberry_django` should do the
+same as `import strawberry.django` if both libraries are installed.
 
 You'd also need to add `strawberry_django` to the `INSTALLED_APPS` of your
 project, this is needed to provide the template for the GraphiQL interface.
@@ -31,12 +34,15 @@ project, this is needed to provide the template for the GraphiQL interface.
 The `GraphQLView` accepts the following arguments:
 
 - `schema`: mandatory, the schema created by `strawberry.Schema`.
-- `graphiql`: optional, defaults to `True`, whether to enable the GraphiQL
-  interface.
+- `graphql_ide`: optional, defaults to `"graphiql"`, allows to choose the
+  GraphQL IDE interface (one of `graphiql`, `apollo-sandbox` or `pathfinder`) or
+  to disable it by passing `None`.
 - `allow_queries_via_get`: optional, defaults to `True`, whether to enable
   queries via `GET` requests
-- `subscriptions_enabled`: optional boolean paramenter enabling subscriptions in
-  the GraphiQL interface, defaults to `False`.
+- `multipart_uploads_enabled`: optional, defaults to `False`, controls whether
+  to enable multipart uploads. Please make sure to consider the
+  [security implications mentioned in the GraphQL Multipart Request Specification](https://github.com/jaydenseric/graphql-multipart-request-spec/blob/master/readme.md#security)
+  when enabling this feature.
 
 ## Deprecated options
 
@@ -56,11 +62,12 @@ encoding process.
 
 We allow to extend the base `GraphQLView`, by overriding the following methods:
 
-- `get_context(self, request: HttpRequest, response: HttpResponse) -> Any`
-- `get_root_value(self, request: HttpRequest) -> Any`
-- `process_result(self, request: HttpRequest, result: ExecutionResult) -> GraphQLHTTPResponse`
+- `def get_context(self, request: HttpRequest, response: HttpResponse) -> Any`
+- `def get_root_value(self, request: HttpRequest) -> Any`
+- `def process_result(self, request: HttpRequest, result: ExecutionResult) -> GraphQLHTTPResponse`
+- `def render_graphql_ide(self, request: HttpRequest) -> HttpResponse`
 
-## get_context
+### get_context
 
 `get_context` allows to provide a custom context object that can be used in your
 resolver. You can return anything here, by default we return a
@@ -70,7 +77,7 @@ resolver. You can return anything here, by default we return a
 @strawberry.type
 class Query:
     @strawberry.field
-    def user(self, info: Info) -> str:
+    def user(self, info: strawberry.Info) -> str:
         return str(info.context.request.user)
 ```
 
@@ -85,7 +92,7 @@ class MyGraphQLView(GraphQLView):
 @strawberry.type
 class Query:
     @strawberry.field
-    def example(self, info: Info) -> str:
+    def example(self, info: strawberry.Info) -> str:
         return str(info.context["example"])
 ```
 
@@ -95,7 +102,7 @@ called "example".
 Then we use the context in a resolver, the resolver will return "1" in this
 case.
 
-## get_root_value
+### get_root_value
 
 `get_root_value` allows to provide a custom root value for your schema, this is
 probably not used a lot but it might be useful in certain situations.
@@ -116,7 +123,7 @@ class Query:
 Here we are returning a Query where the name is "Patrick", so we when requesting
 the field name we'll return "Patrick" in this case.
 
-## process_result
+### process_result
 
 `process_result` allows to customize and/or process results before they are sent
 to the clients. This can be useful logging errors or hiding them (for example to
@@ -145,6 +152,24 @@ class MyGraphQLView(GraphQLView):
 In this case we are doing the default processing of the result, but it can be
 tweaked based on your needs.
 
+### render_graphql_ide
+
+In case you need more control over the rendering of the GraphQL IDE than the
+`graphql_ide` option provides, you can override the `render_graphql_ide` method.
+
+```python
+from strawberry.django.views import GraphQLView
+from django.http import HttpResponse
+from django.template.loader import render_to_string
+
+
+class MyGraphQLView(GraphQLView):
+    def render_graphql_ide(self, request: HttpRequest) -> HttpResponse:
+        content = render_to_string("myapp/my_graphql_ide_template.html")
+
+        return HttpResponse(content)
+```
+
 # Async Django
 
 Strawberry also provides an async view that you can use with Django 3.1+
@@ -169,12 +194,11 @@ project, this is needed to provide the template for the GraphiQL interface.
 The `AsyncGraphQLView` accepts the following arguments:
 
 - `schema`: mandatory, the schema created by `strawberry.Schema`.
-- `graphiql`: optional, defaults to `True`, whether to enable the GraphiQL
-  interface.
+- `graphql_ide`: optional, defaults to `"graphiql"`, allows to choose the
+  GraphQL IDE interface (one of `graphiql`, `apollo-sandbox` or `pathfinder`) or
+  to disable it by passing `None`.
 - `allow_queries_via_get`: optional, defaults to `True`, whether to enable
   queries via `GET` requests
-- `subscriptions_enabled`: optional boolean paramenter enabling subscriptions in
-  the GraphiQL interface, defaults to `False`.
 
 ## Extending the view
 
@@ -185,8 +209,9 @@ methods:
 - `async get_root_value(self, request: HttpRequest) -> Any`
 - `async process_result(self, request: HttpRequest, result: ExecutionResult) -> GraphQLHTTPResponse`
 - `def encode_json(self, data: GraphQLHTTPResponse) -> str`
+- `async def render_graphql_ide(self, request: HttpRequest) -> HttpResponse`
 
-## get_context
+### get_context
 
 `get_context` allows to provide a custom context object that can be used in your
 resolver. You can return anything here, by default we return a dictionary with
@@ -201,7 +226,7 @@ class MyGraphQLView(AsyncGraphQLView):
 @strawberry.type
 class Query:
     @strawberry.field
-    def example(self, info: Info) -> str:
+    def example(self, info: strawberry.Info) -> str:
         return str(info.context["example"])
 ```
 
@@ -211,7 +236,7 @@ called "example".
 Then we use the context in a resolver, the resolver will return "1" in this
 case.
 
-## get_root_value
+### get_root_value
 
 `get_root_value` allows to provide a custom root value for your schema, this is
 probably not used a lot but it might be useful in certain situations.
@@ -232,7 +257,7 @@ class Query:
 Here we are returning a Query where the name is "Patrick", so we when requesting
 the field name we'll return "Patrick" in this case.
 
-## process_result
+### process_result
 
 `process_result` allows to customize and/or process results before they are sent
 to the clients. This can be useful logging errors or hiding them (for example to
@@ -261,7 +286,7 @@ class MyGraphQLView(AsyncGraphQLView):
 In this case we are doing the default processing of the result, but it can be
 tweaked based on your needs.
 
-## encode_json
+### encode_json
 
 `encode_json` allows to customize the encoding of the JSON response. By default
 we use `json.dumps` but you can override this method to use a different encoder.
@@ -272,9 +297,26 @@ class MyGraphQLView(AsyncGraphQLView):
         return json.dumps(data, indent=2)
 ```
 
+### render_graphql_ide
+
+In case you need more control over the rendering of the GraphQL IDE than the
+`graphql_ide` option provides, you can override the `render_graphql_ide` method.
+
+```python
+from strawberry.django.views import AsyncGraphQLView
+from django.http import HttpResponse
+from django.template.loader import render_to_string
+
+
+class MyGraphQLView(AsyncGraphQLView):
+    async def render_graphql_ide(self, request: HttpRequest) -> HttpResponse:
+        content = render_to_string("myapp/my_graphql_ide_template.html")
+
+        return HttpResponse(content)
+```
+
 ## Subscriptions
 
 Subscriptions run over websockets and thus depend on
 [channels](https://channels.readthedocs.io/). Take a look at our
-[channels integraton](/docs/integrations/channels.md) page for more information
-regarding it.
+[channels integraton](./channels.md) page for more information regarding it.

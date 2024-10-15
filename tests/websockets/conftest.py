@@ -12,13 +12,13 @@ def _get_http_client_classes() -> Generator[Any, None, None]:
         ("AsgiHttpClient", "asgi", [pytest.mark.asgi]),
         ("ChannelsHttpClient", "channels", [pytest.mark.channels]),
         ("FastAPIHttpClient", "fastapi", [pytest.mark.fastapi]),
-        ("StarliteHttpClient", "starlite", [pytest.mark.starlite]),
+        ("LitestarHttpClient", "litestar", [pytest.mark.litestar]),
     ]:
         try:
             client_class = getattr(
                 importlib.import_module(f"tests.http.clients.{module}"), client
             )
-        except ImportError:  # noqa: PERF203
+        except ImportError:
             client_class = None
 
         yield pytest.param(

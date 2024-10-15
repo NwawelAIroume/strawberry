@@ -1,6 +1,6 @@
 import warnings
 from enum import Enum
-from typing import Any, List, Optional, TypeVar
+from typing import List, Optional, TypeVar
 
 import pytest
 
@@ -60,7 +60,7 @@ def test_literal():
         return "Lord Buckethead"
 
     argument = get_name.arguments[0]
-    assert argument.type == int
+    assert argument.type is int
 
 
 def test_object():
@@ -109,7 +109,7 @@ class CustomInfo(Info[ContextType, RootValueType]):
 
 @pytest.mark.parametrize(
     "annotation",
-    [CustomInfo, CustomInfo[Any, Any], Info, Info[Any, Any]],
+    [CustomInfo, CustomInfo[None, None], Info, Info[None, None]],
 )
 def test_custom_info(annotation):
     """Test to ensure that subclassed Info does not raise warning."""

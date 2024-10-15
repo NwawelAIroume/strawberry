@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, List, Mapping, Optional, Union, cast
+import warnings
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Mapping,
+    Optional,
+    Union,
+    cast,
+)
+from typing_extensions import TypeGuard
 
 from flask import Request, Response, render_template_string, request
 from flask.views import View
@@ -12,20 +21,20 @@ from strawberry.http.sync_base_view import (
 )
 from strawberry.http.types import FormData, HTTPMethod, QueryParams
 from strawberry.http.typevars import Context, RootValue
-from strawberry.utils.graphiql import get_graphiql_html
 
 if TYPE_CHECKING:
     from flask.typing import ResponseReturnValue
     from strawberry.http import GraphQLHTTPResponse
+    from strawberry.http.ides import GraphQL_IDE
     from strawberry.schema.base import BaseSchema
 
 
 class FlaskHTTPRequestAdapter(SyncHTTPRequestAdapter):
-    def __init__(self, request: Request):
+    def __init__(self, request: Request) -> None:
         self.request = request
 
     @property
-    def query_params(self) -> Mapping[str, Union[str, Optional[List[str]]]]:
+    def query_params(self) -> QueryParams:
         return self.request.args.to_dict()
 
     @property
@@ -54,20 +63,30 @@ class FlaskHTTPRequestAdapter(SyncHTTPRequestAdapter):
 
 
 class BaseGraphQLView:
+    graphql_ide: Optional[GraphQL_IDE]
+
     def __init__(
         self,
         schema: BaseSchema,
-        graphiql: bool = True,
+        graphiql: Optional[bool] = None,
+        graphql_ide: Optional[GraphQL_IDE] = "graphiql",
         allow_queries_via_get: bool = True,
-    ):
+        multipart_uploads_enabled: bool = False,
+    ) -> None:
         self.schema = schema
         self.graphiql = graphiql
         self.allow_queries_via_get = allow_queries_via_get
+        self.multipart_uploads_enabled = multipart_uploads_enabled
 
-    def render_graphiql(self, request: Request) -> Response:
-        template = get_graphiql_html(False)
-
-        return render_template_string(template)  # type: ignore
+        if graphiql is not None:
+            warnings.warn(
+                "The `graphiql` argument is deprecated in favor of `graphql_ide`",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.graphql_ide = "graphiql" if graphiql else None
+        else:
+            self.graphql_ide = graphql_ide
 
     def create_response(
         self, response_data: GraphQLHTTPResponse, sub_response: Response
@@ -104,9 +123,12 @@ class GraphQLView(
                 status=e.status_code,
             )
 
+    def render_graphql_ide(self, request: Request) -> Response:
+        return render_template_string(self.graphql_ide_html)  # type: ignore
+
 
 class AsyncFlaskHTTPRequestAdapter(AsyncHTTPRequestAdapter):
-    def __init__(self, request: Request):
+    def __init__(self, request: Request) -> None:
         self.request = request
 
     @property
@@ -137,7 +159,9 @@ class AsyncFlaskHTTPRequestAdapter(AsyncHTTPRequestAdapter):
 
 class AsyncGraphQLView(
     BaseGraphQLView,
-    AsyncBaseHTTPView[Request, Response, Response, Context, RootValue],
+    AsyncBaseHTTPView[
+        Request, Response, Response, Request, Response, Context, RootValue
+    ],
     View,
 ):
     methods = ["GET", "POST"]
@@ -161,3 +185,24 @@ class AsyncGraphQLView(
                 response=e.reason,
                 status=e.status_code,
             )
+
+    async def render_graphql_ide(self, request: Request) -> Response:
+        content = render_template_string(self.graphql_ide_html)
+        return Response(content, status=200, content_type="text/html")
+
+    def is_websocket_request(self, request: Request) -> TypeGuard[Request]:
+        return False
+
+    async def pick_websocket_subprotocol(self, request: Request) -> Optional[str]:
+        raise NotImplementedError
+
+    async def create_websocket_response(
+        self, request: Request, subprotocol: Optional[str]
+    ) -> Response:
+        raise NotImplementedError
+
+
+__all__ = [
+    "GraphQLView",
+    "AsyncGraphQLView",
+]

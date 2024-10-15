@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import itertools
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Union
 
-from strawberry.utils.cached_property import cached_property
-
 if TYPE_CHECKING:
-    from strawberry.field import StrawberryField
-    from strawberry.types import Info
+    from typing_extensions import TypeAlias
 
-SyncExtensionResolver = Callable[..., Any]
-AsyncExtensionResolver = Callable[..., Awaitable[Any]]
+    from strawberry.types import Info
+    from strawberry.types.field import StrawberryField
+
+
+SyncExtensionResolver: TypeAlias = Callable[..., Any]
+AsyncExtensionResolver: TypeAlias = Callable[..., Awaitable[Any]]
 
 
 class FieldExtension:
@@ -42,7 +44,9 @@ class FieldExtension:
 
 class SyncToAsyncExtension(FieldExtension):
     """Helper class for mixing async extensions with sync resolvers.
-    Applied automatically"""
+
+    Applied automatically.
+    """
 
     async def resolve_async(
         self, next_: AsyncExtensionResolver, source: Any, info: Info, **kwargs: Any
@@ -65,11 +69,12 @@ def _get_async_resolvers(
 def build_field_extension_resolvers(
     field: StrawberryField,
 ) -> list[Union[SyncExtensionResolver, AsyncExtensionResolver]]:
-    """
+    """Builds a list of resolvers for a field with extensions.
+
     Verifies that all of the field extensions for a given field support
     sync or async depending on the field resolver.
-    Inserts a SyncToAsyncExtension to be able to
-    use Async extensions on sync resolvers
+
+    Inserts a SyncToAsyncExtension to be able to use Async extensions on sync resolvers
     Throws a TypeError otherwise.
 
     Returns True if resolving should be async, False on sync resolving
@@ -149,3 +154,6 @@ def build_field_extension_resolvers(
             f"If possible try to change the execution order so that all sync-only "
             f"extensions are executed first."
         )
+
+
+__all__ = ["FieldExtension"]

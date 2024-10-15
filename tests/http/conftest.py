@@ -17,8 +17,9 @@ def _get_http_client_classes() -> Generator[Any, None, None]:
         ("DjangoHttpClient", "django", [pytest.mark.django]),
         ("FastAPIHttpClient", "fastapi", [pytest.mark.fastapi]),
         ("FlaskHttpClient", "flask", [pytest.mark.flask]),
+        ("QuartHttpClient", "quart", [pytest.mark.quart]),
         ("SanicHttpClient", "sanic", [pytest.mark.sanic]),
-        ("StarliteHttpClient", "starlite", [pytest.mark.starlite]),
+        ("LitestarHttpClient", "litestar", [pytest.mark.litestar]),
         (
             "SyncChannelsHttpClient",
             "channels",
@@ -30,7 +31,7 @@ def _get_http_client_classes() -> Generator[Any, None, None]:
                 importlib.import_module(f".{module}", package="tests.http.clients"),
                 client,
             )
-        except ImportError:  # noqa: PERF203
+        except ImportError as e:
             client_class = None
 
         yield pytest.param(

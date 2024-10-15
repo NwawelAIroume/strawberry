@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Union, cast
+import warnings
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Union, cast
 
 from chalice.app import Request, Response
 from strawberry.http.exceptions import HTTPException
@@ -8,20 +9,20 @@ from strawberry.http.sync_base_view import SyncBaseHTTPView, SyncHTTPRequestAdap
 from strawberry.http.temporal_response import TemporalResponse
 from strawberry.http.types import HTTPMethod, QueryParams
 from strawberry.http.typevars import Context, RootValue
-from strawberry.utils.graphiql import get_graphiql_html
 
 if TYPE_CHECKING:
     from strawberry.http import GraphQLHTTPResponse
+    from strawberry.http.ides import GraphQL_IDE
     from strawberry.schema import BaseSchema
 
 
 class ChaliceHTTPRequestAdapter(SyncHTTPRequestAdapter):
-    def __init__(self, request: Request):
+    def __init__(self, request: Request) -> None:
         self.request = request
 
     @property
     def query_params(self) -> QueryParams:
-        return self.request.query_params or {}  # type: ignore
+        return self.request.query_params or {}
 
     @property
     def body(self) -> Union[str, bytes]:
@@ -57,26 +58,30 @@ class GraphQLView(
     def __init__(
         self,
         schema: BaseSchema,
-        graphiql: bool = True,
+        graphiql: Optional[bool] = None,
+        graphql_ide: Optional[GraphQL_IDE] = "graphiql",
         allow_queries_via_get: bool = True,
-    ):
-        self.graphiql = graphiql
+    ) -> None:
         self.allow_queries_via_get = allow_queries_via_get
         self.schema = schema
+        if graphiql is not None:
+            warnings.warn(
+                "The `graphiql` argument is deprecated in favor of `graphql_ide`",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.graphql_ide = "graphiql" if graphiql else None
+        else:
+            self.graphql_ide = graphql_ide
 
     def get_root_value(self, request: Request) -> Optional[RootValue]:
         return None
 
-    def render_graphiql(self, request: Request) -> Response:
-        """
-        Returns a string containing the html for the graphiql webpage. It also caches
-        the result using lru cache.
-        This saves loading from disk each time it is invoked.
-
-        Returns:
-            The GraphiQL html page as a string
-        """
-        return get_graphiql_html(subscription_enabled=False)  # type: ignore
+    def render_graphql_ide(self, request: Request) -> Response:
+        return Response(
+            self.graphql_ide_html,
+            headers={"Content-Type": "text/html"},
+        )
 
     def get_sub_response(self, request: Request) -> TemporalResponse:
         return TemporalResponse()
@@ -86,12 +91,18 @@ class GraphQLView(
         message: str,
         error_code: str,
         http_status_code: int,
-        headers: Optional[Dict[str, str]] = None,
+        headers: Optional[Dict[str, str | List[str]]] = None,
     ) -> Response:
-        """
-        A wrapper for error responses
+        """A wrapper for error responses.
+
+        Args:
+            message: The error message.
+            error_code: The error code.
+            http_status_code: The HTTP status code.
+            headers: The headers to include in the response.
+
         Returns:
-        An errors response
+            An errors response.
         """
         body = {"Code": error_code, "Message": message}
 
@@ -111,7 +122,7 @@ class GraphQLView(
         return Response(
             body=self.encode_json(response_data),
             status_code=status_code,
-            headers=sub_response.headers,
+            headers=sub_response.headers,  # type: ignore[arg-type]
         )
 
     def execute_request(self, request: Request) -> Response:
@@ -133,3 +144,6 @@ class GraphQLView(
                 message=e.reason,
                 http_status_code=e.status_code,
             )
+
+
+__all__ = ["GraphQLView"]

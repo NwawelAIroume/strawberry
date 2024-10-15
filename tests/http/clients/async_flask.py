@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from flask import Flask
 from flask import Request as FlaskRequest
 from flask import Response as FlaskResponse
 from strawberry.flask.views import AsyncGraphQLView as BaseAsyncGraphQLView
 from strawberry.http import GraphQLHTTPResponse
+from strawberry.http.ides import GraphQL_IDE
 from strawberry.types import ExecutionResult
 from tests.views.schema import Query, schema
 
@@ -47,9 +48,11 @@ class GraphQLView(BaseAsyncGraphQLView):
 class AsyncFlaskHttpClient(FlaskHttpClient):
     def __init__(
         self,
-        graphiql: bool = True,
+        graphiql: Optional[bool] = None,
+        graphql_ide: Optional[GraphQL_IDE] = "graphiql",
         allow_queries_via_get: bool = True,
         result_override: ResultOverrideFunction = None,
+        multipart_uploads_enabled: bool = False,
     ):
         self.app = Flask(__name__)
         self.app.debug = True
@@ -58,8 +61,10 @@ class AsyncFlaskHttpClient(FlaskHttpClient):
             "graphql_view",
             schema=schema,
             graphiql=graphiql,
+            graphql_ide=graphql_ide,
             allow_queries_via_get=allow_queries_via_get,
             result_override=result_override,
+            multipart_uploads_enabled=multipart_uploads_enabled,
         )
 
         self.app.add_url_rule(

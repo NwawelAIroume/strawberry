@@ -3,7 +3,6 @@ from __future__ import annotations
 import dataclasses
 import warnings
 from typing import (
-    TYPE_CHECKING,
     Any,
     Callable,
     List,
@@ -16,25 +15,26 @@ from typing import (
 )
 
 from pydantic import BaseModel
-from pydantic.utils import lenient_issubclass
 
-from strawberry.auto import StrawberryAuto
+from strawberry.experimental.pydantic._compat import (
+    CompatModelField,
+    PydanticCompat,
+    lenient_issubclass,
+)
 from strawberry.experimental.pydantic.utils import (
     get_private_fields,
     get_strawberry_type_from_model,
     normalize_type,
 )
-from strawberry.object_type import _process_type, _wrap_dataclass
+from strawberry.types.auto import StrawberryAuto
+from strawberry.types.object_type import _process_type, _wrap_dataclass
 from strawberry.types.type_resolver import _get_fields
 from strawberry.utils.typing import get_list_annotation, is_list
 
 from .exceptions import MissingFieldsListError
 
-if TYPE_CHECKING:
-    from pydantic.fields import ModelField
 
-
-def get_type_for_field(field: ModelField) -> Union[Any, Type[None], Type[List]]:
+def get_type_for_field(field: CompatModelField) -> Union[Any, Type[None], Type[List]]:
     type_ = field.outer_type_
     type_ = normalize_type(type_)
     return field_type_to_type(type_)
@@ -72,7 +72,8 @@ def error_type(
     all_fields: bool = False,
 ) -> Callable[..., Type]:
     def wrap(cls: Type) -> Type:
-        model_fields = model.__fields__
+        compat = PydanticCompat.from_model(model)
+        model_fields = compat.get_model_fields(model)
         fields_set = set(fields) if fields else set()
 
         if fields:
@@ -113,7 +114,7 @@ def error_type(
         ]
 
         wrapped = _wrap_dataclass(cls)
-        extra_fields = cast(List[dataclasses.Field], _get_fields(wrapped))
+        extra_fields = cast(List[dataclasses.Field], _get_fields(wrapped, {}))
         private_fields = get_private_fields(wrapped)
 
         all_model_fields.extend(

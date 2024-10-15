@@ -16,7 +16,7 @@ from typing_extensions import Literal, Protocol, TypedDict
 from weakref import WeakSet
 
 from channels.consumer import AsyncConsumer
-from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from channels.generic.websocket import AsyncWebsocketConsumer
 
 
 class ChannelsMessage(TypedDict, total=False):
@@ -33,32 +33,25 @@ class ChannelsLayer(Protocol):  # pragma: no cover
 
     extensions: List[Literal["groups", "flush"]]
 
-    async def send(self, channel: str, message: dict) -> None:
-        ...
+    async def send(self, channel: str, message: dict) -> None: ...
 
-    async def receive(self, channel: str) -> dict:
-        ...
+    async def receive(self, channel: str) -> dict: ...
 
-    async def new_channel(self, prefix: str = ...) -> str:
-        ...
+    async def new_channel(self, prefix: str = ...) -> str: ...
 
     # If groups extension is supported
 
     group_expiry: int
 
-    async def group_add(self, group: str, channel: str) -> None:
-        ...
+    async def group_add(self, group: str, channel: str) -> None: ...
 
-    async def group_discard(self, group: str, channel: str) -> None:
-        ...
+    async def group_discard(self, group: str, channel: str) -> None: ...
 
-    async def group_send(self, group: str, message: dict) -> None:
-        ...
+    async def group_send(self, group: str, message: dict) -> None: ...
 
     # If flush extension is supported
 
-    async def flush(self) -> None:
-        ...
+    async def flush(self) -> None: ...
 
 
 class ChannelsConsumer(AsyncConsumer):
@@ -68,7 +61,7 @@ class ChannelsConsumer(AsyncConsumer):
     channel_layer: Optional[ChannelsLayer]
     channel_receive: Callable[[], Awaitable[dict]]
 
-    def __init__(self, *args: str, **kwargs: Any):
+    def __init__(self, *args: str, **kwargs: Any) -> None:
         self.listen_queues: DefaultDict[str, WeakSet[asyncio.Queue]] = defaultdict(
             WeakSet
         )
@@ -99,7 +92,7 @@ class ChannelsConsumer(AsyncConsumer):
         Utility to listen for channels messages for this consumer inside
         a resolver (usually inside a subscription).
 
-        Parameters:
+        Args:
             type:
                 The type of the message to wait for.
             timeout:
@@ -111,12 +104,11 @@ class ChannelsConsumer(AsyncConsumer):
                 execution and then discarded using `self.channel_layer.group_discard`
                 at the end of the execution.
         """
-
         warnings.warn("Use listen_to_channel instead", DeprecationWarning, stacklevel=2)
         if self.channel_layer is None:
             raise RuntimeError(
                 "Layers integration is required listening for channels.\n"
-                "Check https://channels.readthedocs.io/en/stable/topics/channel_layers.html "  # noqa:E501
+                "Check https://channels.readthedocs.io/en/stable/topics/channel_layers.html "
                 "for more information"
             )
 
@@ -138,7 +130,7 @@ class ChannelsConsumer(AsyncConsumer):
                     awaitable = asyncio.wait_for(awaitable, timeout)
                 try:
                     yield await awaitable
-                except asyncio.TimeoutError:  # noqa: PERF203
+                except asyncio.TimeoutError:
                     # TODO: shall we add log here and maybe in the suppress below?
                     return
         finally:
@@ -159,7 +151,7 @@ class ChannelsConsumer(AsyncConsumer):
         Utility to listen for channels messages for this consumer inside
         a resolver (usually inside a subscription).
 
-        Parameters:
+        Args:
             type:
                 The type of the message to wait for.
             timeout:
@@ -171,12 +163,11 @@ class ChannelsConsumer(AsyncConsumer):
                 execution and then discarded using `self.channel_layer.group_discard`
                 at the end of the execution.
         """
-
         # Code to acquire resource (Channels subscriptions)
         if self.channel_layer is None:
             raise RuntimeError(
                 "Layers integration is required listening for channels.\n"
-                "Check https://channels.readthedocs.io/en/stable/topics/channel_layers.html "  # noqa:E501
+                "Check https://channels.readthedocs.io/en/stable/topics/channel_layers.html "
                 "for more information"
             )
 
@@ -208,17 +199,19 @@ class ChannelsConsumer(AsyncConsumer):
         Seperated to allow user code to be run after subscribing to channels
         and before blocking to wait for incoming channel messages.
         """
-
         while True:
             awaitable = queue.get()
             if timeout is not None:
                 awaitable = asyncio.wait_for(awaitable, timeout)
             try:
                 yield await awaitable
-            except asyncio.TimeoutError:  # noqa: PERF203
+            except asyncio.TimeoutError:
                 # TODO: shall we add log here and maybe in the suppress below?
                 return
 
 
-class ChannelsWSConsumer(ChannelsConsumer, AsyncJsonWebsocketConsumer):
+class ChannelsWSConsumer(ChannelsConsumer, AsyncWebsocketConsumer):
     """Base channels websocket async consumer."""
+
+
+__all__ = ["ChannelsConsumer", "ChannelsWSConsumer"]

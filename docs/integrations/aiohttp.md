@@ -29,13 +29,18 @@ app.router.add_route("*", "/graphql", GraphQLView(schema=schema))
 
 ## Options
 
-The `GraphQLView` accepts two options at the moment:
+The `GraphQLView` accepts the following options at the moment:
 
 - `schema`: mandatory, the schema created by `strawberry.Schema`.
-- `graphiql`: optional, defaults to `True`, whether to enable the GraphiQL
-  interface.
+- `graphql_ide`: optional, defaults to `"graphiql"`, allows to choose the
+  GraphQL IDE interface (one of `graphiql`, `apollo-sandbox` or `pathfinder`) or
+  to disable it by passing `None`.
 - `allow_queries_via_get`: optional, defaults to `True`, whether to enable
   queries via `GET` requests
+- `multipart_uploads_enabled`: optional, defaults to `False`, controls whether
+  to enable multipart uploads. Please make sure to consider the
+  [security implications mentioned in the GraphQL Multipart Request Specification](https://github.com/jaydenseric/graphql-multipart-request-spec/blob/master/readme.md#security)
+  when enabling this feature.
 
 ## Extending the view
 
@@ -46,8 +51,9 @@ methods:
 - `async get_root_value(self, request: aiohttp.web.Request) -> object`
 - `async process_result(self, request: aiohttp.web.Request, result: ExecutionResult) -> GraphQLHTTPResponse`
 - `def encode_json(self, data: GraphQLHTTPResponse) -> str`
+- `async def render_graphql_ide(self, request: aiohttp.web.Request) -> aiohttp.web.Response`
 
-## get_context
+### get_context
 
 By overriding `GraphQLView.get_context` you can provide a custom context object
 for your resolvers. You can return anything here; by default GraphQLView returns
@@ -68,7 +74,7 @@ class MyGraphQLView(GraphQLView):
 @strawberry.type
 class Query:
     @strawberry.field
-    def example(self, info: Info) -> str:
+    def example(self, info: strawberry.Info) -> str:
         return str(info.context["example"])
 ```
 
@@ -78,7 +84,7 @@ called `"example"`.
 Then we can use the context in a resolver. In this case the resolver will return
 `1`.
 
-## get_root_value
+### get_root_value
 
 By overriding `GraphQLView.get_root_value` you can provide a custom root value
 for your schema. This is probably not used a lot but it might be useful in
@@ -105,7 +111,7 @@ class Query:
 Here we configure a Query where requesting the `name` field will return
 `"Patrick"` through the custom root value.
 
-## process_result
+### process_result
 
 By overriding `GraphQLView.process_result` you can customize and/or process
 results before they are sent to a client. This can be useful for logging errors,
@@ -136,7 +142,7 @@ class MyGraphQLView(GraphQLView):
 In this case we are doing the default processing of the result, but it can be
 tweaked based on your needs.
 
-## encode_json
+### encode_json
 
 `encode_json` allows to customize the encoding of the JSON response. By default
 we use `json.dumps` but you can override this method to use a different encoder.
@@ -145,4 +151,21 @@ we use `json.dumps` but you can override this method to use a different encoder.
 class MyGraphQLView(GraphQLView):
     def encode_json(self, data: GraphQLHTTPResponse) -> str:
         return json.dumps(data, indent=2)
+```
+
+### render_graphql_ide
+
+In case you need more control over the rendering of the GraphQL IDE than the
+`graphql_ide` option provides, you can override the `render_graphql_ide` method.
+
+```python
+from aiohttp import web
+from strawberry.aiohttp.views import GraphQLView
+
+
+class MyGraphQLView(GraphQLView):
+    async def render_graphql_ide(self, request: web.Request) -> web.Response:
+        custom_html = """<html><body><h1>Custom GraphQL IDE</h1></body></html>"""
+
+        return web.Response(text=custom_html, content_type="text/html")
 ```

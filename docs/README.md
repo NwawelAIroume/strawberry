@@ -1,3 +1,7 @@
+---
+title: Strawberry docs
+---
+
 # Strawberry docs
 
 - [Getting started](./index.md)
@@ -8,6 +12,7 @@
 - [Queries](./general/queries.md)
 - [Mutations](./general/mutations.md)
 - [Subscriptions](./general/subscriptions.md)
+- [Multipart Subscriptions](./general/multipart-subscriptions.md)
 - [Why](./general/why.md)
 - [Breaking changes](./breaking-changes.md)
 - [Upgrading Strawberry](./general/upgrades.md)
@@ -33,14 +38,16 @@
 
 ## Codegen
 
+- [Schema codegen](./codegen/schema-codegen.md)
 - [Query codegen](./codegen/query-codegen.md)
 
 ## [Extensions](./extensions)
 
-## [Errors](./errors/)
+## [Errors](./errors)
 
 ## Guides
 
+- [Accessing parent data](./guides/accessing-parent-data.md)
 - [Authentication](./guides/authentication.md)
 - [DataLoaders](./guides/dataloaders.md)
 - [Dealing with errors](./guides/errors.md)
@@ -48,13 +55,14 @@
 - [Federation V1](./guides/federation-v1.md)
 - [Relay](./guides/relay.md)
 - [Custom extensions](./guides/custom-extensions.md)
+- [Field extensions](./guides/field-extensions.md)
 - [File upload](./guides/file-upload.md)
 - [Pagination](./guides/pagination/overview.md)
   - [Implementing Offset Pagination](./guides/pagination/offset-based.md)
   - [Implementing Cursor Pagination](./guides/pagination/cursor-based.md)
   - [Implementing the Connection specification](./guides/pagination/connections.md)
 - [Permissions](./guides/permissions.md)
-- [Builtin server](./guides/server.md)
+- [Built-in server](./guides/server.md)
 - [Tools](./guides/tools.md)
 - [Schema export](./guides/schema-export.md)
 - [Convert to dictionary](./guides/convert-to-dictionary.md)
@@ -77,9 +85,11 @@
 - [Channels](./integrations/channels.md)
 - [FastAPI](./integrations/fastapi.md)
 - [Flask](./integrations/flask.md)
+- [Quart](./integrations/quart.md)
 - [Sanic](./integrations/sanic.md)
 - [Chalice](./integrations/chalice.md)
 - [Starlette](./integrations/starlette.md)
+- [Litestar](./integrations/litestar.md)
 - [Creating an integration](./integrations/creating-an-integration.md)
 - [Pydantic **experimental**](./integrations/pydantic.md)
 

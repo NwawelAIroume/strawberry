@@ -16,6 +16,7 @@ Code blocks now support:
 ```python highlight=strawberry,str
 import strawberry
 
+
 @strawberry.type
 class X:
     name: str
@@ -25,6 +26,7 @@ class X:
 
 ```python lines=1-4
 import strawberry
+
 
 @strawberry.type
 class X:
@@ -38,9 +40,11 @@ This is probably not implemented in the best way, but for now it works:
 ```python
 import strawberry
 
-
 #      ^^^^^^^^^^
 #      This is a note about this line
+
+
+# this is a standard comment
 @strawberry.type
 class X:
     name: str
@@ -53,19 +57,26 @@ class X:
 You can show two different code blocks next to each other (useful when comparing
 the GraphQL schema against the Python definition):
 
-```python+schema
+<CodeGrid>
+
+```python
 import strawberry
+
 
 @strawberry.type
 class Query:
     @strawberry.field
     def ping(self) -> str:
         return "pong"
----
+```
+
+```graphql
 type Query {
-    ping: String!
+  ping: String!
 }
 ```
+
+</CodeGrid>
 
 or when showing the request and response to a query:
 

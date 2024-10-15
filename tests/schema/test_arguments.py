@@ -4,7 +4,7 @@ from typing import Optional
 from typing_extensions import Annotated
 
 import strawberry
-from strawberry.unset import UNSET
+from strawberry.types.unset import UNSET
 
 
 def test_argument_descriptions():
@@ -14,7 +14,7 @@ def test_argument_descriptions():
         def hello(  # type: ignore
             name: Annotated[
                 str, strawberry.argument(description="Your name")
-            ] = "Patrick"
+            ] = "Patrick",
         ) -> str:
             return f"Hi {name}"
 
@@ -38,7 +38,7 @@ def test_argument_deprecation_reason():
         def hello(  # type: ignore
             name: Annotated[
                 str, strawberry.argument(deprecation_reason="Your reason")
-            ] = "Patrick"
+            ] = "Patrick",
         ) -> str:
             return f"Hi {name}"
 
@@ -221,7 +221,6 @@ def test_argument_parse_order():
 
     Refer to: https://github.com/strawberry-graphql/strawberry/issues/2855
     """
-
     from tests.schema.test_annotated import type_a, type_b
 
     expected = """

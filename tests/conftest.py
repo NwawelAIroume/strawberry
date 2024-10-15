@@ -4,6 +4,8 @@ from typing import Any, List, Tuple
 
 import pytest
 
+from strawberry.utils import IS_GQL_32
+
 
 def pytest_emoji_xfailed(config: pytest.Config) -> Tuple[str, str]:
     return "🤷‍♂️ ", "XFAIL 🤷‍♂️ "
@@ -31,9 +33,10 @@ def pytest_collection_modifyitems(config: pytest.Config, items: List[pytest.Item
             "django",
             "fastapi",
             "flask",
+            "quart",
             "pydantic",
             "sanic",
-            "starlite",
+            "litestar",
         ]
 
         for marker in markers:
@@ -41,11 +44,16 @@ def pytest_collection_modifyitems(config: pytest.Config, items: List[pytest.Item
                 item.add_marker(getattr(pytest.mark, marker))
 
 
-if sys.version_info < (3, 12):
+@pytest.hookimpl
+def pytest_ignore_collect(
+    collection_path: pathlib.Path, path: Any, config: pytest.Config
+):
+    if sys.version_info < (3, 12) and "python_312" in collection_path.parts:
+        return True
 
-    @pytest.hookimpl
-    def pytest_ignore_collect(
-        collection_path: pathlib.Path, path: Any, config: pytest.Config
-    ):
-        if "python_312" in collection_path.parts:
-            return True
+
+def skip_if_gql_32(reason: str) -> pytest.MarkDecorator:
+    return pytest.mark.skipif(
+        IS_GQL_32,
+        reason=reason,
+    )

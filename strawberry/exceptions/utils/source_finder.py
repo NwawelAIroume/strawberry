@@ -4,10 +4,9 @@ import importlib
 import importlib.util
 import sys
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, Type, cast
-
-from strawberry.utils.cached_property import cached_property
 
 from ..exception_source import ExceptionSource
 
@@ -16,8 +15,8 @@ if TYPE_CHECKING:
 
     from libcst import BinaryOperation, Call, CSTNode, FunctionDef
 
-    from strawberry.custom_scalar import ScalarDefinition
-    from strawberry.union import StrawberryUnion
+    from strawberry.types.scalar import ScalarDefinition
+    from strawberry.types.union import StrawberryUnion
 
 
 @dataclass
@@ -51,7 +50,7 @@ class LibCSTSourceFinder:
         if not path.exists() or path.suffix != ".py":
             return None  # pragma: no cover
 
-        source = path.read_text()
+        source = path.read_text(encoding="utf-8")
 
         return SourcePath(path=path, code=source)
 
@@ -606,3 +605,6 @@ class SourceFinder:
             if self.cst
             else None
         )
+
+
+__all__ = ["SourceFinder"]

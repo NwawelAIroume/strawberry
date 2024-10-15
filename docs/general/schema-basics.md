@@ -49,8 +49,6 @@ The `!` sign specifies that a field is non-nullable.
 Notice that the schema doesn’t specify how to get the data. That comes later
 when defining the resolvers.
 
-<!-- TODO: plug Ariadne for a schema-first alternative -->
-
 ## Code first approach
 
 As mentioned Strawberry uses a code first approach. The previous schema would
@@ -70,7 +68,7 @@ class Book:
 @strawberry.type
 class Author:
     name: str
-    books: typing.List["Book"]
+    books: typing.List[Book]
 ```
 
 As you can see the code maps almost one to one with the schema, thanks to
@@ -154,7 +152,7 @@ To achieve this, we introduce the concept of the
 function.
 
 Continuing with this example of books and authors, resolvers can be defined to
-provides values to the fields:
+provide values to the fields:
 
 ```python
 def get_author_for_book(root) -> "Author":
@@ -167,7 +165,7 @@ class Book:
     author: "Author" = strawberry.field(resolver=get_author_for_book)
 
 
-def get_books_for_author(root):
+def get_books_for_author(root) -> typing.List[Book]:
     return [Book(title="Jurassic Park")]
 
 
@@ -298,9 +296,8 @@ the following:
 ```python
 @strawberry.type
 class Mutation:
-    @strawberry.field
-    def add_book(self, title: str, author: str) -> Book:
-        ...
+    @strawberry.mutation
+    def add_book(self, title: str, author: str) -> Book: ...
 ```
 
 This Mutation type defines a single available mutation, `addBook`. The mutation
@@ -360,9 +357,8 @@ Consider our previous mutation to add a book:
 ```python
 @strawberry.type
 class Mutation:
-    @strawberry.field
-    def add_book(self, title: str, author: str) -> Book:
-        ...
+    @strawberry.mutation
+    def add_book(self, title: str, author: str) -> Book: ...
 ```
 
 Instead of accepting two arguments, this mutation could accept a single input
@@ -381,9 +377,8 @@ class AddBookInput:
 
 @strawberry.type
 class Mutation:
-    @strawberry.field
-    def add_book(self, book: AddBookInput) -> Book:
-        ...
+    @strawberry.mutation
+    def add_book(self, book: AddBookInput) -> Book: ...
 ```
 
 Not only does this facilitate passing the AddBookInput type around within our

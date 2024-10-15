@@ -1,13 +1,21 @@
-"""GraphQLHTTPHandler
-
-A consumer to provide a graphql endpoint, and optionally graphiql.
-"""
 from __future__ import annotations
 
 import dataclasses
 import json
+import warnings
+from functools import cached_property
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncGenerator,
+    Callable,
+    Dict,
+    Mapping,
+    Optional,
+    Union,
+)
+from typing_extensions import TypeGuard, assert_never
 from urllib.parse import parse_qs
 
 from django.conf import settings
@@ -22,14 +30,13 @@ from strawberry.http.sync_base_view import SyncBaseHTTPView, SyncHTTPRequestAdap
 from strawberry.http.temporal_response import TemporalResponse
 from strawberry.http.types import FormData
 from strawberry.http.typevars import Context, RootValue
-from strawberry.unset import UNSET
-from strawberry.utils.cached_property import cached_property
-from strawberry.utils.graphiql import get_graphiql_html
+from strawberry.types.unset import UNSET
 
 from .base import ChannelsConsumer
 
 if TYPE_CHECKING:
     from strawberry.http import GraphQLHTTPResponse
+    from strawberry.http.ides import GraphQL_IDE
     from strawberry.http.types import HTTPMethod, QueryParams
     from strawberry.schema import BaseSchema
 
@@ -39,6 +46,14 @@ class ChannelsResponse:
     content: bytes
     status: int = 200
     content_type: str = "application/json"
+    headers: Dict[bytes, bytes] = dataclasses.field(default_factory=dict)
+
+
+@dataclasses.dataclass
+class MultipartChannelsResponse:
+    stream: Callable[[], AsyncGenerator[str, None]]
+    status: int = 200
+    content_type: str = "multipart/mixed;boundary=graphql;subscriptionSpec=1.0"
     headers: Dict[bytes, bytes] = dataclasses.field(default_factory=dict)
 
 
@@ -100,7 +115,7 @@ class ChannelsRequest:
 
 
 class BaseChannelsRequestAdapter:
-    def __init__(self, request: ChannelsRequest):
+    def __init__(self, request: ChannelsRequest) -> None:
         self.request = request
 
     @property
@@ -143,23 +158,33 @@ class SyncChannelsRequestAdapter(BaseChannelsRequestAdapter, SyncHTTPRequestAdap
 
 
 class BaseGraphQLHTTPConsumer(ChannelsConsumer, AsyncHttpConsumer):
+    graphql_ide_html: str
+    graphql_ide: Optional[GraphQL_IDE] = "graphiql"
+
     def __init__(
         self,
         schema: BaseSchema,
-        graphiql: bool = True,
+        graphiql: Optional[bool] = None,
+        graphql_ide: Optional[GraphQL_IDE] = "graphiql",
         allow_queries_via_get: bool = True,
-        subscriptions_enabled: bool = True,
+        multipart_uploads_enabled: bool = False,
         **kwargs: Any,
-    ):
+    ) -> None:
         self.schema = schema
-        self.graphiql = graphiql
         self.allow_queries_via_get = allow_queries_via_get
-        self.subscriptions_enabled = subscriptions_enabled
-        super().__init__(**kwargs)
+        self.multipart_uploads_enabled = multipart_uploads_enabled
 
-    def render_graphiql(self, request: ChannelsRequest) -> ChannelsResponse:
-        html = get_graphiql_html(self.subscriptions_enabled)
-        return ChannelsResponse(content=html.encode(), content_type="text/html")
+        if graphiql is not None:
+            warnings.warn(
+                "The `graphiql` argument is deprecated in favor of `graphql_ide`",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.graphql_ide = "graphiql" if graphiql else None
+        else:
+            self.graphql_ide = graphql_ide
+
+        super().__init__(**kwargs)
 
     def create_response(
         self, response_data: GraphQLHTTPResponse, sub_response: TemporalResponse
@@ -173,16 +198,28 @@ class BaseGraphQLHTTPConsumer(ChannelsConsumer, AsyncHttpConsumer):
     async def handle(self, body: bytes) -> None:
         request = ChannelsRequest(consumer=self, body=body)
         try:
-            response: ChannelsResponse = await self.run(request)
+            response = await self.run(request)
 
             if b"Content-Type" not in response.headers:
                 response.headers[b"Content-Type"] = response.content_type.encode()
 
-            await self.send_response(
-                response.status,
-                response.content,
-                headers=response.headers,
-            )
+            if isinstance(response, MultipartChannelsResponse):
+                response.headers[b"Transfer-Encoding"] = b"chunked"
+                await self.send_headers(headers=response.headers)
+
+                async for chunk in response.stream():
+                    await self.send_body(chunk.encode("utf-8"), more_body=True)
+
+                await self.send_body(b"", more_body=False)
+
+            elif isinstance(response, ChannelsResponse):
+                await self.send_response(
+                    response.status,
+                    response.content,
+                    headers=response.headers,
+                )
+            else:
+                assert_never(response)
         except HTTPException as e:
             await self.send_response(e.status_code, e.reason.encode())
 
@@ -191,7 +228,9 @@ class GraphQLHTTPConsumer(
     BaseGraphQLHTTPConsumer,
     AsyncBaseHTTPView[
         ChannelsRequest,
-        ChannelsResponse,
+        Union[ChannelsResponse, MultipartChannelsResponse],
+        TemporalResponse,
+        ChannelsRequest,
         TemporalResponse,
         Context,
         RootValue,
@@ -235,6 +274,44 @@ class GraphQLHTTPConsumer(
     async def get_sub_response(self, request: ChannelsRequest) -> TemporalResponse:
         return TemporalResponse()
 
+    async def create_streaming_response(
+        self,
+        request: ChannelsRequest,
+        stream: Callable[[], AsyncGenerator[str, None]],
+        sub_response: TemporalResponse,
+        headers: Dict[str, str],
+    ) -> MultipartChannelsResponse:
+        status = sub_response.status_code or 200
+
+        response_headers = {
+            k.encode(): v.encode() for k, v in sub_response.headers.items()
+        }
+        response_headers.update({k.encode(): v.encode() for k, v in headers.items()})
+
+        return MultipartChannelsResponse(
+            stream=stream, status=status, headers=response_headers
+        )
+
+    async def render_graphql_ide(self, request: ChannelsRequest) -> ChannelsResponse:
+        return ChannelsResponse(
+            content=self.graphql_ide_html.encode(), content_type="text/html"
+        )
+
+    def is_websocket_request(
+        self, request: ChannelsRequest
+    ) -> TypeGuard[ChannelsRequest]:
+        return False
+
+    async def pick_websocket_subprotocol(
+        self, request: ChannelsRequest
+    ) -> Optional[str]:
+        return None
+
+    async def create_websocket_response(
+        self, request: ChannelsRequest, subprotocol: Optional[str]
+    ) -> TemporalResponse:
+        raise NotImplementedError
+
 
 class SyncGraphQLHTTPConsumer(
     BaseGraphQLHTTPConsumer,
@@ -270,14 +347,22 @@ class SyncGraphQLHTTPConsumer(
     def get_sub_response(self, request: ChannelsRequest) -> TemporalResponse:
         return TemporalResponse()
 
+    def render_graphql_ide(self, request: ChannelsRequest) -> ChannelsResponse:
+        return ChannelsResponse(
+            content=self.graphql_ide_html.encode(), content_type="text/html"
+        )
+
     # Sync channels is actually async, but it uses database_sync_to_async to call
     # handlers in a threadpool. Check SyncConsumer's documentation for more info:
     # https://github.com/django/channels/blob/main/channels/consumer.py#L104
-    @database_sync_to_async
+    @database_sync_to_async  # pyright: ignore[reportIncompatibleMethodOverride]
     def run(
         self,
         request: ChannelsRequest,
         context: Optional[Context] = UNSET,
         root_value: Optional[RootValue] = UNSET,
-    ) -> ChannelsResponse:
+    ) -> ChannelsResponse | MultipartChannelsResponse:
         return super().run(request, context, root_value)
+
+
+__all__ = ["GraphQLHTTPConsumer", "SyncGraphQLHTTPConsumer"]

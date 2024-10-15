@@ -7,8 +7,8 @@ title: Visual studio code
 Strawberry comes with support for both MyPy and Pylance, Microsoft's own
 language server for Python.
 
-This guide will explain how to configure Visual Studio Code and Pylance to
-work with Strawberry.
+This guide will explain how to configure Visual Studio Code and Pylance to work
+with Strawberry.
 
 ## Install Pylance
 
@@ -34,4 +34,4 @@ checking mode. At the moment strict mode is not supported.
 Once you have configured the settings, you can restart VS Code and you should be
 getting type checking errors in vscode.
 
-<img src="./pylance.png" alt="Pylance showing a type error" width="1990" height="522" />
+<!-- ![Pylance showing a type error](./pylance.png) -->

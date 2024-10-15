@@ -10,12 +10,16 @@ from strawberry.extensions.field_extension import (
     FieldExtension,
     SyncExtensionResolver,
 )
-from strawberry.types import Info
+from strawberry.schema.config import StrawberryConfig
 
 
 class UpperCaseExtension(FieldExtension):
     def resolve(
-        self, next_: Callable[..., Any], source: Any, info: Info, **kwargs: Any
+        self,
+        next_: Callable[..., Any],
+        source: Any,
+        info: strawberry.Info,
+        **kwargs: Any,
     ):
         result = next_(source, info, **kwargs)
         return str(result).upper()
@@ -23,7 +27,11 @@ class UpperCaseExtension(FieldExtension):
 
 class LowerCaseExtension(FieldExtension):
     def resolve(
-        self, next_: Callable[..., Any], source: Any, info: Info, **kwargs: Any
+        self,
+        next_: Callable[..., Any],
+        source: Any,
+        info: strawberry.Info,
+        **kwargs: Any,
     ):
         result = next_(source, info, **kwargs)
         return str(result).lower()
@@ -31,7 +39,11 @@ class LowerCaseExtension(FieldExtension):
 
 class AsyncUpperCaseExtension(FieldExtension):
     async def resolve_async(
-        self, next_: AsyncExtensionResolver, source: Any, info: Info, **kwargs: Any
+        self,
+        next_: AsyncExtensionResolver,
+        source: Any,
+        info: strawberry.Info,
+        **kwargs: Any,
     ):
         result = await next_(source, info, **kwargs)
         return str(result).upper()
@@ -39,12 +51,20 @@ class AsyncUpperCaseExtension(FieldExtension):
 
 class IdentityExtension(FieldExtension):
     def resolve(
-        self, next_: SyncExtensionResolver, source: Any, info: Info, **kwargs: Any
+        self,
+        next_: SyncExtensionResolver,
+        source: Any,
+        info: strawberry.Info,
+        **kwargs: Any,
     ) -> Any:
         return next_(source, info, **kwargs)
 
     async def resolve_async(
-        self, next_: AsyncExtensionResolver, source: Any, info: Info, **kwargs: Any
+        self,
+        next_: AsyncExtensionResolver,
+        source: Any,
+        info: strawberry.Info,
+        **kwargs: Any,
     ) -> Any:
         return await next_(source, info, **kwargs)
 
@@ -145,9 +165,7 @@ async def test_can_use_sync_before_async_extensions():
 
 
 async def test_can_use_sync_only_and_sync_before_async_extensions():
-    """
-    Use Sync - Sync + Async - Sync - Async possible
-    """
+    """Use Sync - Sync + Async - Sync - Async possible."""
 
     @strawberry.type
     class Query:
@@ -173,14 +191,22 @@ async def test_can_use_sync_only_and_sync_before_async_extensions():
 def test_fail_on_missing_async_extensions():
     class LowerCaseExtension(FieldExtension):
         def resolve(
-            self, next_: Callable[..., Any], source: Any, info: Info, **kwargs: Any
+            self,
+            next_: Callable[..., Any],
+            source: Any,
+            info: strawberry.Info,
+            **kwargs: Any,
         ):
             result = next_(source, info, **kwargs)
             return str(result).lower()
 
     class UpperCaseExtension(FieldExtension):
         async def resolve_async(
-            self, next_: Callable[..., Any], source: Any, info: Info, **kwargs: Any
+            self,
+            next_: Callable[..., Any],
+            source: Any,
+            info: strawberry.Info,
+            **kwargs: Any,
         ):
             result = await next_(source, info, **kwargs)
             return str(result).upper()
@@ -204,14 +230,22 @@ def test_fail_on_missing_async_extensions():
 def test_extension_order_respected():
     class LowerCaseExtension(FieldExtension):
         def resolve(
-            self, next_: Callable[..., Any], source: Any, info: Info, **kwargs: Any
+            self,
+            next_: Callable[..., Any],
+            source: Any,
+            info: strawberry.Info,
+            **kwargs: Any,
         ):
             result = next_(source, info, **kwargs)
             return str(result).lower()
 
     class UpperCaseExtension(FieldExtension):
         def resolve(
-            self, next_: Callable[..., Any], source: Any, info: Info, **kwargs: Any
+            self,
+            next_: Callable[..., Any],
+            source: Any,
+            info: strawberry.Info,
+            **kwargs: Any,
         ):
             result = next_(source, info, **kwargs)
             return str(result).upper()
@@ -231,9 +265,8 @@ def test_extension_order_respected():
 
 
 def test_extension_argument_parsing():
-    """
-    Check that kwargs passed to field extensions have been converted into
-    Strawberry types
+    """Check that kwargs passed to field extensions have been converted into
+    Strawberry types.
     """
 
     @strawberry.input
@@ -244,7 +277,11 @@ def test_extension_argument_parsing():
 
     class CustomExtension(FieldExtension):
         def resolve(
-            self, next_: Callable[..., Any], source: Any, info: Info, **kwargs: Any
+            self,
+            next_: Callable[..., Any],
+            source: Any,
+            info: strawberry.Info,
+            **kwargs: Any,
         ):
             nonlocal field_kwargs
             field_kwargs = kwargs
@@ -273,7 +310,11 @@ def test_extension_argument_parsing():
 def test_extension_mutate_arguments():
     class CustomExtension(FieldExtension):
         def resolve(
-            self, next_: Callable[..., Any], source: Any, info: Info, **kwargs: Any
+            self,
+            next_: Callable[..., Any],
+            source: Any,
+            info: strawberry.Info,
+            **kwargs: Any,
         ):
             kwargs["some_input"] += 10
             result = next_(source, info, **kwargs)
@@ -299,7 +340,11 @@ def test_extension_access_argument_metadata():
 
     class CustomExtension(FieldExtension):
         def resolve(
-            self, next_: Callable[..., Any], source: Any, info: Info, **kwargs: Any
+            self,
+            next_: Callable[..., Any],
+            source: Any,
+            info: strawberry.Info,
+            **kwargs: Any,
         ):
             nonlocal field_kwargs
             field_kwargs = kwargs
@@ -336,3 +381,36 @@ def test_extension_access_argument_metadata():
         },
         "another_input": {},
     }
+
+
+def test_extension_has_custom_info_class():
+    class CustomInfo(strawberry.Info):
+        test: str = "foo"
+
+    class CustomExtension(FieldExtension):
+        def resolve(
+            self,
+            next_: Callable[..., Any],
+            source: Any,
+            info: CustomInfo,
+            **kwargs: Any,
+        ):
+            assert isinstance(info, CustomInfo)
+            # Explicitly check it's not Info.
+            assert strawberry.Info in type(info).__bases__
+            assert info.test == "foo"
+            return next_(source, info, **kwargs)
+
+    @strawberry.type
+    class Query:
+        @strawberry.field(extensions=[CustomExtension()])
+        def string(self) -> str:
+            return "This is a test!!"
+
+    schema = strawberry.Schema(
+        query=Query, config=StrawberryConfig(info_class=CustomInfo)
+    )
+    query = "query { string }"
+    result = schema.execute_sync(query)
+    assert result.data, result.errors
+    assert result.data["string"] == "This is a test!!"

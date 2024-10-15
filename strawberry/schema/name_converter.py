@@ -3,25 +3,25 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, List, Optional, Union, cast
 from typing_extensions import Protocol
 
-from strawberry.custom_scalar import ScalarDefinition
 from strawberry.directive import StrawberryDirective
-from strawberry.enum import EnumDefinition, EnumValue
-from strawberry.lazy_type import LazyType
 from strawberry.schema_directive import StrawberrySchemaDirective
-from strawberry.type import (
+from strawberry.types.base import (
     StrawberryList,
+    StrawberryObjectDefinition,
     StrawberryOptional,
     has_object_definition,
 )
-from strawberry.types.types import StrawberryObjectDefinition
-from strawberry.union import StrawberryUnion
+from strawberry.types.enum import EnumDefinition, EnumValue
+from strawberry.types.lazy_type import LazyType
+from strawberry.types.scalar import ScalarDefinition
+from strawberry.types.union import StrawberryUnion
 from strawberry.utils.str_converters import capitalize_first, to_camel_case
 from strawberry.utils.typing import eval_type
 
 if TYPE_CHECKING:
-    from strawberry.arguments import StrawberryArgument
-    from strawberry.field import StrawberryField
-    from strawberry.type import StrawberryType
+    from strawberry.types.arguments import StrawberryArgument
+    from strawberry.types.base import StrawberryType
+    from strawberry.types.field import StrawberryField
 
 
 class HasGraphQLName(Protocol):
@@ -64,9 +64,9 @@ class NameConverter:
         return self.get_graphql_name(argument)
 
     def from_object(self, object_type: StrawberryObjectDefinition) -> str:
-        # if concrete_of is not generic, than this is a subclass of an already
-        # especialized type.
-        if object_type.concrete_of and object_type.concrete_of.is_generic:
+        # if concrete_of is not generic, then this is a subclass of an already
+        # specialized type.
+        if object_type.concrete_of and object_type.concrete_of.is_graphql_generic:
             return self.from_generic(
                 object_type, list(object_type.type_var_map.values())
             )
@@ -146,10 +146,7 @@ class NameConverter:
         elif isinstance(type_, EnumDefinition):
             name = type_.name
         elif isinstance(type_, StrawberryUnion):
-            # TODO: test Generics with unnamed unions
-            assert type_.graphql_name
-
-            name = type_.graphql_name
+            name = type_.graphql_name if type_.graphql_name else self.from_union(type_)
         elif isinstance(type_, StrawberryList):
             name = self.get_from_type(type_.of_type) + "List"
         elif isinstance(type_, StrawberryOptional):
@@ -162,7 +159,7 @@ class NameConverter:
             strawberry_type = type_.__strawberry_definition__
 
             if (
-                strawberry_type.is_generic
+                strawberry_type.is_graphql_generic
                 and not strawberry_type.is_specialized_generic
             ):
                 types = type_.__args__  # type: ignore
@@ -187,3 +184,6 @@ class NameConverter:
         assert obj.python_name
 
         return self.apply_naming_config(obj.python_name)
+
+
+__all__ = ["NameConverter"]

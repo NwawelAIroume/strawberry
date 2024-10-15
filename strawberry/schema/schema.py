@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import warnings
-from functools import lru_cache
+from functools import cached_property, lru_cache
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncIterator,
     Dict,
     Iterable,
     List,
@@ -16,47 +15,48 @@ from typing import (
 )
 
 from graphql import (
+    GraphQLBoolean,
+    GraphQLField,
     GraphQLNamedType,
     GraphQLNonNull,
     GraphQLSchema,
     get_introspection_query,
-    parse,
     validate_schema,
 )
-from graphql.execution import subscribe
+from graphql.execution.middleware import MiddlewareManager
 from graphql.type.directives import specified_directives
 
 from strawberry import relay
 from strawberry.annotation import StrawberryAnnotation
+from strawberry.extensions import SchemaExtension
 from strawberry.extensions.directives import (
     DirectivesExtension,
     DirectivesExtensionSync,
 )
+from strawberry.extensions.runner import SchemaExtensionsRunner
 from strawberry.schema.schema_converter import GraphQLCoreConverter
 from strawberry.schema.types.scalar import DEFAULT_SCALAR_REGISTRY
-from strawberry.type import has_object_definition
 from strawberry.types import ExecutionContext
+from strawberry.types.base import StrawberryObjectDefinition, has_object_definition
 from strawberry.types.graphql import OperationType
-from strawberry.types.types import StrawberryObjectDefinition
 
 from ..printer import print_schema
 from . import compat
 from .base import BaseSchema
 from .config import StrawberryConfig
 from .execute import execute, execute_sync
+from .subscribe import SubscriptionResult, subscribe
 
 if TYPE_CHECKING:
     from graphql import ExecutionContext as GraphQLExecutionContext
-    from graphql import ExecutionResult as GraphQLExecutionResult
 
-    from strawberry.custom_scalar import ScalarDefinition, ScalarWrapper
     from strawberry.directive import StrawberryDirective
-    from strawberry.enum import EnumDefinition
-    from strawberry.extensions import SchemaExtension
-    from strawberry.field import StrawberryField
-    from strawberry.type import StrawberryType
     from strawberry.types import ExecutionResult
-    from strawberry.union import StrawberryUnion
+    from strawberry.types.base import StrawberryType
+    from strawberry.types.enum import EnumDefinition
+    from strawberry.types.field import StrawberryField
+    from strawberry.types.scalar import ScalarDefinition, ScalarWrapper
+    from strawberry.types.union import StrawberryUnion
 
 DEFAULT_ALLOWED_OPERATION_TYPES = {
     OperationType.QUERY,
@@ -79,15 +79,51 @@ class Schema(BaseSchema):
         execution_context_class: Optional[Type[GraphQLExecutionContext]] = None,
         config: Optional[StrawberryConfig] = None,
         scalar_overrides: Optional[
-            Dict[object, Union[Type, ScalarWrapper, ScalarDefinition]]
+            Dict[object, Union[Type, ScalarWrapper, ScalarDefinition]],
         ] = None,
         schema_directives: Iterable[object] = (),
-    ):
+    ) -> None:
+        """Default Schema to be used in a Strawberry application.
+
+        A GraphQL Schema class used to define the structure and configuration
+        of GraphQL queries, mutations, and subscriptions.
+
+        This class allows the creation of a GraphQL schema by specifying the types
+        for queries, mutations, and subscriptions, along with various configuration
+        options such as directives, extensions, and scalar overrides.
+
+        Args:
+            query: The entry point for queries.
+            mutation: The entry point for mutations.
+            subscription: The entry point for subscriptions.
+            directives: A list of operation directives that clients can use.
+                The bult-in `@include` and `@skip` are included by default.
+            types: A list of additional types that will be included in the schema.
+            extensions: A list of Strawberry extensions.
+            execution_context_class: The execution context class.
+            config: The configuration for the schema.
+            scalar_overrides: A dictionary of overrides for scalars.
+            schema_directives: A list of schema directives for the schema.
+
+        Example:
+        ```python
+        import strawberry
+
+
+        @strawberry.type
+        class Query:
+            name: str = "Patrick"
+
+
+        schema = strawberry.Schema(query=Query)
+        ```
+        """
         self.query = query
         self.mutation = mutation
         self.subscription = subscription
 
         self.extensions = extensions
+        self._cached_middleware_manager: MiddlewareManager | None = None
         self.execution_context_class = execution_context_class
         self.config = config or StrawberryConfig()
 
@@ -100,7 +136,9 @@ class Schema(BaseSchema):
             # TODO: check that the overrides are valid
             scalar_registry.update(cast(SCALAR_OVERRIDES_DICT_TYPE, scalar_overrides))
 
-        self.schema_converter = GraphQLCoreConverter(self.config, scalar_registry)
+        self.schema_converter = GraphQLCoreConverter(
+            self.config, scalar_registry, self.get_fields
+        )
         self.directives = directives
         self.schema_directives = list(schema_directives)
 
@@ -128,7 +166,7 @@ class Schema(BaseSchema):
                 )
             else:
                 if has_object_definition(type_):
-                    if type_.__strawberry_definition__.is_generic:
+                    if type_.__strawberry_definition__.is_graphql_generic:
                         type_ = StrawberryAnnotation(type_).resolve()  # noqa: PLW2901
                 graphql_type = self.schema_converter.from_maybe_optional(type_)
                 if isinstance(graphql_type, GraphQLNonNull):
@@ -166,6 +204,7 @@ class Schema(BaseSchema):
 
         self._warn_for_federation_directives()
         self._resolve_node_ids()
+        self._extend_introspection()
 
         # Validate schema early because we want developers to know about
         # possible issues as soon as possible
@@ -174,17 +213,65 @@ class Schema(BaseSchema):
             formatted_errors = "\n\n".join(f"❌ {error.message}" for error in errors)
             raise ValueError(f"Invalid Schema. Errors:\n\n{formatted_errors}")
 
-    def get_extensions(
-        self, sync: bool = False
-    ) -> List[Union[Type[SchemaExtension], SchemaExtension]]:
-        extensions = list(self.extensions)
-
+    def get_extensions(self, sync: bool = False) -> List[SchemaExtension]:
+        extensions = []
         if self.directives:
-            extensions.append(DirectivesExtensionSync if sync else DirectivesExtension)
+            extensions = [
+                *self.extensions,
+                DirectivesExtensionSync if sync else DirectivesExtension,
+            ]
+        extensions.extend(self.extensions)
+        return [
+            ext if isinstance(ext, SchemaExtension) else ext(execution_context=None)
+            for ext in extensions
+        ]
 
-        return extensions
+    @cached_property
+    def _sync_extensions(self) -> List[SchemaExtension]:
+        return self.get_extensions(sync=True)
 
-    @lru_cache()
+    @cached_property
+    def _async_extensions(self) -> List[SchemaExtension]:
+        return self.get_extensions(sync=False)
+
+    def create_extensions_runner(
+        self, execution_context: ExecutionContext, extensions: list[SchemaExtension]
+    ) -> SchemaExtensionsRunner:
+        return SchemaExtensionsRunner(
+            execution_context=execution_context,
+            extensions=extensions,
+        )
+
+    def _get_middleware_manager(
+        self, extensions: list[SchemaExtension]
+    ) -> MiddlewareManager:
+        # create a middleware manager with all the extensions that implement resolve
+        if not self._cached_middleware_manager:
+            self._cached_middleware_manager = MiddlewareManager(
+                *(ext for ext in extensions if ext._implements_resolve())
+            )
+        return self._cached_middleware_manager
+
+    def _create_execution_context(
+        self,
+        query: Optional[str],
+        allowed_operation_types: Iterable[OperationType],
+        variable_values: Optional[Dict[str, Any]] = None,
+        context_value: Optional[Any] = None,
+        root_value: Optional[Any] = None,
+        operation_name: Optional[str] = None,
+    ) -> ExecutionContext:
+        return ExecutionContext(
+            query=query,
+            schema=self,
+            allowed_operations=allowed_operation_types,
+            context=context_value,
+            root_value=root_value,
+            variables=variable_values,
+            provided_operation_name=operation_name,
+        )
+
+    @lru_cache
     def get_type_by_name(
         self, name: str
     ) -> Optional[
@@ -220,7 +307,7 @@ class Schema(BaseSchema):
             None,
         )
 
-    @lru_cache()
+    @lru_cache
     def get_directive_by_name(self, graphql_name: str) -> Optional[StrawberryDirective]:
         return next(
             (
@@ -230,6 +317,11 @@ class Schema(BaseSchema):
             ),
             None,
         )
+
+    def get_fields(
+        self, type_definition: StrawberryObjectDefinition
+    ) -> List[StrawberryField]:
+        return type_definition.fields
 
     async def execute(
         self,
@@ -243,26 +335,28 @@ class Schema(BaseSchema):
         if allowed_operation_types is None:
             allowed_operation_types = DEFAULT_ALLOWED_OPERATION_TYPES
 
-        # Create execution context
-        execution_context = ExecutionContext(
+        execution_context = self._create_execution_context(
             query=query,
-            schema=self,
-            context=context_value,
-            root_value=root_value,
-            variables=variable_values,
-            provided_operation_name=operation_name,
-        )
-
-        result = await execute(
-            self._schema,
-            extensions=self.get_extensions(),
-            execution_context_class=self.execution_context_class,
-            execution_context=execution_context,
             allowed_operation_types=allowed_operation_types,
-            process_errors=self.process_errors,
+            variable_values=variable_values,
+            context_value=context_value,
+            root_value=root_value,
+            operation_name=operation_name,
         )
-
-        return result
+        extensions = self.get_extensions()
+        # TODO (#3571): remove this when we implement execution context as parameter.
+        for extension in extensions:
+            extension.execution_context = execution_context
+        return await execute(
+            self._schema,
+            execution_context=execution_context,
+            extensions_runner=self.create_extensions_runner(
+                execution_context, extensions
+            ),
+            process_errors=self._process_errors,
+            middleware_manager=self._get_middleware_manager(extensions),
+            execution_context_class=self.execution_context_class,
+        )
 
     def execute_sync(
         self,
@@ -276,45 +370,62 @@ class Schema(BaseSchema):
         if allowed_operation_types is None:
             allowed_operation_types = DEFAULT_ALLOWED_OPERATION_TYPES
 
-        execution_context = ExecutionContext(
+        execution_context = self._create_execution_context(
             query=query,
-            schema=self,
-            context=context_value,
-            root_value=root_value,
-            variables=variable_values,
-            provided_operation_name=operation_name,
-        )
-
-        result = execute_sync(
-            self._schema,
-            extensions=self.get_extensions(sync=True),
-            execution_context_class=self.execution_context_class,
-            execution_context=execution_context,
             allowed_operation_types=allowed_operation_types,
-            process_errors=self.process_errors,
+            variable_values=variable_values,
+            context_value=context_value,
+            root_value=root_value,
+            operation_name=operation_name,
         )
-
-        return result
+        extensions = self._sync_extensions
+        # TODO (#3571): remove this when we implement execution context as parameter.
+        for extension in extensions:
+            extension.execution_context = execution_context
+        return execute_sync(
+            self._schema,
+            execution_context=execution_context,
+            extensions_runner=self.create_extensions_runner(
+                execution_context, extensions
+            ),
+            execution_context_class=self.execution_context_class,
+            allowed_operation_types=allowed_operation_types,
+            process_errors=self._process_errors,
+            middleware_manager=self._get_middleware_manager(extensions),
+        )
 
     async def subscribe(
         self,
-        # TODO: make this optional when we support extensions
-        query: str,
+        query: Optional[str],
         variable_values: Optional[Dict[str, Any]] = None,
         context_value: Optional[Any] = None,
         root_value: Optional[Any] = None,
         operation_name: Optional[str] = None,
-    ) -> Union[AsyncIterator[GraphQLExecutionResult], GraphQLExecutionResult]:
-        return await subscribe(
-            self._schema,
-            parse(query),
-            root_value=root_value,
-            context_value=context_value,
+    ) -> SubscriptionResult:
+        execution_context = self._create_execution_context(
+            query=query,
+            allowed_operation_types=(OperationType.SUBSCRIPTION,),
             variable_values=variable_values,
+            context_value=context_value,
+            root_value=root_value,
             operation_name=operation_name,
         )
+        extensions = self._async_extensions
+        # TODO (#3571): remove this when we implement execution context as parameter.
+        for extension in extensions:
+            extension.execution_context = execution_context
+        return await subscribe(
+            self._schema,
+            execution_context=execution_context,
+            extensions_runner=self.create_extensions_runner(
+                execution_context, extensions
+            ),
+            process_errors=self._process_errors,
+            middleware_manager=self._get_middleware_manager(extensions),
+            execution_context_class=self.execution_context_class,
+        )
 
-    def _resolve_node_ids(self):
+    def _resolve_node_ids(self) -> None:
         for concrete_type in self.schema_converter.type_map.values():
             type_def = concrete_type.definition
 
@@ -334,9 +445,18 @@ class Schema(BaseSchema):
             # early feedback for missing NodeID annotations
             origin = type_def.origin
             if issubclass(origin, relay.Node):
-                origin.resolve_id_attr()
+                has_custom_resolve_id = False
+                for base in origin.__mro__:
+                    if base is relay.Node:
+                        break
+                    if "resolve_id" in base.__dict__:
+                        has_custom_resolve_id = True
+                        break
 
-    def _warn_for_federation_directives(self):
+                if not has_custom_resolve_id:
+                    origin.resolve_id_attr()
+
+    def _warn_for_federation_directives(self) -> None:
         """Raises a warning if the schema has any federation directives."""
         from strawberry.federation.schema_directives import FederationDirective
 
@@ -359,13 +479,24 @@ class Schema(BaseSchema):
                 stacklevel=3,
             )
 
+    def _extend_introspection(self) -> None:
+        def _resolve_is_one_of(obj: Any, info: Any) -> bool:
+            if "strawberry-definition" not in obj.extensions:
+                return False
+
+            return obj.extensions["strawberry-definition"].is_one_of
+
+        instrospection_type = self._schema.type_map["__Type"]
+        instrospection_type.fields["isOneOf"] = GraphQLField(GraphQLBoolean)  # type: ignore[attr-defined]
+        instrospection_type.fields["isOneOf"].resolve = _resolve_is_one_of  # type: ignore[attr-defined]
+
     def as_str(self) -> str:
         return print_schema(self)
 
     __str__ = as_str
 
     def introspect(self) -> Dict[str, Any]:
-        """Return the introspection query result for the current schema
+        """Return the introspection query result for the current schema.
 
         Raises:
             ValueError: If the introspection query fails due to an invalid schema
@@ -375,3 +506,6 @@ class Schema(BaseSchema):
             raise ValueError(f"Invalid Schema. Errors {introspection.errors!r}")
 
         return introspection.data
+
+
+__all__ = ["Schema"]
